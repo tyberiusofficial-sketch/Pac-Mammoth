@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PacMammoth - Mammobits Arcade</title>
+  <style>
+    body {
+      background: black;
+      margin: 0;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      margin: auto;
+      background: #111;
+    }
+    #score {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      font-size: 20px;
+      font-family: Arial, sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div id="score">Score: 0</div>
+  <canvas id="gameCanvas" width="600" height="600"></canvas>
+  <audio id="bgm" src="backgroundmusic.mp3" autoplay loop></audio>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    // Load images
+    const mammothSprites = {
+      up: new Image(), down: new Image(), left: new Image(), right: new Image()
+    };
+    mammothSprites.up.src = "mammoth_up.png";
+    mammothSprites.down.src = "mammoth_down.png";
+    mammothSprites.left.src = "mammoth_left.png";
+    mammothSprites.right.src = "mammoth_right.png";
+
+    const hunterSprites = {
+      up: new Image(), down: new Image(), left: new Image(), right: new Image()
+    };
+    hunterSprites.up.src = "hunter_up.png";
+    hunterSprites.down.src = "hunter_down.png";
+    hunterSprites.left.src = "hunter_left.png";
+    hunterSprites.right.src = "hunter_right.png";
+
+    const coinImg = new Image();
+    coinImg.src = "vinecoin.png";
+
+    // Game state
+    let score = 0;
+    const tileSize = 30;
+    const gridSize = 20;
+
+    let mammoth = { x: 1, y: 1, dir: "right" };
+    let hunters = [
+      { x: 18, y: 1, dir: "left" },
+      { x: 1, y: 18, dir: "up" }
+    ];
+
+    // Place coins
+    let coins = [];
+    for (let i = 0; i < gridSize; i++) {
+      for (let j = 0; j < gridSize; j++) {
+        if (!(i === 1 && j === 1)) {
+          coins.push({ x: i, y: j });
+        }
+      }
+    }
+
+    // Controls
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowUp") mammoth.dir = "up";
+      if (e.key === "ArrowDown") mammoth.dir = "down";
+      if (e.key === "ArrowLeft") mammoth.dir = "left";
+      if (e.key === "ArrowRight") mammoth.dir = "right";
+    });
+
+    function update() {
+      // Move mammoth
+      if (mammoth.dir === "up") mammoth.y--;
+      if (mammoth.dir === "down") mammoth.y++;
+      if (mammoth.dir === "left") mammoth.x--;
+      if (mammoth.dir === "right") mammoth.x++;
+
+      // Collect coins
+      coins = coins.filter(c => {
+        if (c.x === mammoth.x && c.y === mammoth.y) {
+          score++;
+          document.getElementById("score").innerText = "Score: " + score;
+          return false;
+        }
+        return true;
+      });
+
+      // Move hunters randomly
+      hunters.forEach(h => {
+        if (Math.random() < 0.2) {
+          const dirs = ["up", "down", "left", "right"];
+          h.dir = dirs[Math.floor(Math.random() * 4)];
+        }
+        if (h.dir === "up") h.y--;
+        if (h.dir === "down") h.y++;
+        if (h.dir === "left") h.x--;
+        if (h.dir === "right") h.x++;
+      });
+
+      // Collision check
+      hunters.forEach(h => {
+        if (h.x === mammoth.x && h.y === mammoth.y) {
+          alert("Game Over! Final Score: " + score);
+          document.location.reload();
+        }
+      });
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw coins
+      coins.forEach(c => {
+        ctx.drawImage(coinImg, c.x * tileSize, c.y * tileSize, tileSize, tileSize);
+      });
+
+      // Draw mammoth
+      ctx.drawImage(mammothSprites[mammoth.dir], mammoth.x * tileSize, mammoth.y * tileSize, tileSize, tileSize);
+
+      // Draw hunters
+      hunters.forEach(h => {
+        ctx.drawImage(hunterSprites[h.dir], h.x * tileSize, h.y * tileSize, tileSize, tileSize);
+      });
+    }
+
+    function gameLoop() {
+      update();
+      draw();
+    }
+
+    setInterval(gameLoop, 200);
+  </script>
+</body>
+</html>
