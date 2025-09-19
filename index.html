@@ -1,148 +1,319 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>PacMammoth - Mammobits Arcade</title>
+  <meta charset="utf-8" />
+  <title>Mammobits Arcade — PacMammoth</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body {
-      background: black;
-      margin: 0;
-      overflow: hidden;
-    }
-    canvas {
-      display: block;
-      margin: auto;
-      background: #111;
-    }
-    #score {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      color: white;
-      font-size: 20px;
-      font-family: Arial, sans-serif;
-    }
+    :root { --size: 20px; }
+    html, body { margin:0; background:#000; color:#fff; font-family:Arial, Helvetica, sans-serif; }
+    #ui { position:fixed; inset:0 0 auto 0; display:flex; gap:16px; padding:10px 14px; align-items:center; }
+    #score { font-weight:700; }
+    #canvas { display:block; margin:48px auto 20px; background:#000; }
+    button { background:#0c8; color:#000; border:0; padding:6px 10px; border-radius:6px; cursor:pointer; }
+    button:active { transform:translateY(1px); }
   </style>
 </head>
 <body>
-  <div id="score">Score: 0</div>
-  <canvas id="gameCanvas" width="600" height="600"></canvas>
-  <audio id="bgm" src="backgroundmusic.mp3" autoplay loop></audio>
+  <div id="ui">
+    <div id="score">Score: 0</div>
+    <div id="lives">Lives: 3</div>
+    <button id="playAudio" title="Enable sound if browser blocks autoplay">Enable Sound</button>
+  </div>
+  <canvas id="canvas" width="420" height="420"></canvas>
+  <audio id="bgm" src="backgroundmusic.mp3" loop preload="auto"></audio>
 
   <script>
-    const canvas = document.getElementById("gameCanvas");
-    const ctx = canvas.getContext("2d");
+  // ====== ASSETS ======
+  const mammoth = { up:new Image(), down:new Image(), left:new Image(), right:new Image() };
+  mammoth.up.src="mammoth_up.png";
+  mammoth.down.src="mammoth_down.png";
+  mammoth.left.src="mammoth_left.png";
+  mammoth.right.src="mammoth_right.png";
 
-    // Load images
-    const mammothSprites = {
-      up: new Image(), down: new Image(), left: new Image(), right: new Image()
-    };
-    mammothSprites.up.src = "mammoth_up.png";
-    mammothSprites.down.src = "mammoth_down.png";
-    mammothSprites.left.src = "mammoth_left.png";
-    mammothSprites.right.src = "mammoth_right.png";
+  const hunter = { up:new Image(), down:new Image(), left:new Image(), right:new Image() };
+  hunter.up.src="hunter_up.png";
+  hunter.down.src="hunter_down.png";
+  hunter.left.src="hunter_left.png";
+  hunter.right.src="hunter_right.png";
 
-    const hunterSprites = {
-      up: new Image(), down: new Image(), left: new Image(), right: new Image()
-    };
-    hunterSprites.up.src = "hunter_up.png";
-    hunterSprites.down.src = "hunter_down.png";
-    hunterSprites.left.src = "hunter_left.png";
-    hunterSprites.right.src = "hunter_right.png";
+  const coinImg = new Image(); coinImg.src="vinecoin.png";
 
-    const coinImg = new Image();
-    coinImg.src = "vinecoin.png";
+  const bgm = document.getElementById('bgm');
+  document.getElementById('playAudio').onclick = () => { bgm.play().catch(()=>{}); };
 
-    // Game state
-    let score = 0;
-    const tileSize = 30;
-    const gridSize = 20;
+  // ====== CANVAS / GRID ======
+  const tile = 20;        // pixels per tile (420x420 canvas -> 21 tiles, but maze uses 20x20 inside borders)
+  const cols = 20, rows = 20;
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
 
-    let mammoth = { x: 1, y: 1, dir: "right" };
-    let hunters = [
-      { x: 18, y: 1, dir: "left" },
-      { x: 1, y: 18, dir: "up" }
-    ];
+  // ====== MAZE (from your Python `tiles`) ======
+  // 0 = wall, 1 = pellet, 2 = empty (eaten/blank)
+  const tiles = [
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,0,0,0,0,
+    0,1,0,0,1,0,0,1,0,1,0,0,1,0,0,1,0,0,0,0,
+    0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,
+    0,1,0,0,1,0,1,0,0,0,1,0,1,0,0,1,0,0,0,0,
+    0,1,1,1,1,0,1,1,0,1,1,0,1,1,1,1,0,0,0,0,
+    0,1,0,0,1,0,0,1,0,1,0,0,1,0,0,0,0,0,0,0,
+    0,1,0,0,1,0,1,1,1,1,1,0,1,0,0,0,0,0,0,0,
+    0,1,1,1,1,1,1,0,0,0,1,1,1,1,1,1,0,0,0,0,
+    0,0,0,0,1,0,1,1,1,1,1,0,1,0,0,1,0,0,0,0,
+    0,0,0,0,1,0,1,0,0,0,1,0,1,0,0,1,0,0,0,0,
+    0,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,0,0,0,0,
+    0,1,0,0,1,0,0,1,0,1,0,0,0,0,0,1,0,0,0,0,
+    0,1,1,0,1,1,1,1,1,1,1,1,1,0,1,1,0,0,0,0,
+    0,0,1,0,1,0,1,0,0,0,1,0,1,0,1,0,0,0,0,0,
+    0,1,1,1,1,0,1,1,0,1,1,0,1,1,1,1,0,0,0,0,
+    0,1,0,0,0,0,0,1,0,1,0,0,0,0,0,1,0,0,0,0,
+    0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+  ];
 
-    // Place coins
-    let coins = [];
-    for (let i = 0; i < gridSize; i++) {
-      for (let j = 0; j < gridSize; j++) {
-        if (!(i === 1 && j === 1)) {
-          coins.push({ x: i, y: j });
+  // ====== HELPERS ======
+  const idx = (x,y)=> x + y*cols;
+  const isWall = (x,y)=> tiles[idx(x,y)]===0;
+  const isPath = (x,y)=> tiles[idx(x,y)]!==0; // 1 or 2
+  const inBounds = (x,y)=> x>=0&&x<cols&&y>=0&&y<rows;
+
+  function drawMaze(){
+    ctx.fillStyle="#000";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    // walls
+    ctx.fillStyle="#0747ff";
+    for(let y=0;y<rows;y++){
+      for(let x=0;x<cols;x++){
+        if(tiles[idx(x,y)]===0){
+          ctx.fillRect(x*tile, y*tile, tile, tile);
+        }else{
+          // tiny pellet guides (we overdraw with coins below where tile==1)
+          ctx.fillStyle="#0747ff";
+          ctx.fillRect(x*tile, y*tile, tile, tile);
+          // carve corridor
+          ctx.fillStyle="#000";
+          ctx.fillRect(x*tile+2, y*tile+2, tile-4, tile-4);
         }
       }
     }
 
-    // Controls
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowUp") mammoth.dir = "up";
-      if (e.key === "ArrowDown") mammoth.dir = "down";
-      if (e.key === "ArrowLeft") mammoth.dir = "left";
-      if (e.key === "ArrowRight") mammoth.dir = "right";
+    // draw vinecoins for tile==1
+    for(let y=0;y<rows;y++){
+      for(let x=0;x<cols;x++){
+        if(tiles[idx(x,y)]===1){
+          const s = Math.floor(tile*0.6);
+          ctx.drawImage(coinImg, x*tile + (tile-s)/2, y*tile + (tile-s)/2, s, s);
+        }
+      }
+    }
+  }
+
+  // ====== ACTORS ======
+  const DIRS = {
+    up:    {x:0,y:-1, key:"ArrowUp"},
+    down:  {x:0,y:1,  key:"ArrowDown"},
+    left:  {x:-1,y:0, key:"ArrowLeft"},
+    right: {x:1,y:0,  key:"ArrowRight"},
+  };
+
+  let score=0, lives=3;
+  const scoreEl=document.getElementById('score');
+  const livesEl=document.getElementById('lives');
+
+  // Start positions (grid coords)
+  const startMammoth = { x:9, y:15 };              // similar to python example
+  const ghostHouse   = { x:10, y:10 };             // center "box"
+  let player = { x:startMammoth.x, y:startMammoth.y, dir:'left', next:'left', px:startMammoth.x*tile, py:startMammoth.y*tile };
+
+  function resetPlayer(){
+    player.x=startMammoth.x; player.y=startMammoth.y; player.dir='left'; player.next='left';
+    player.px = player.x*tile; player.py = player.y*tile;
+  }
+
+  const ghosts = [];  // active ghosts on board
+  const ghostQueue = [0,1,2,3]; // spawn order
+  const ghostMax = 4;
+  const ghostSpeed = 2; // pixels per frame
+
+  function spawnGhost(){
+    if(ghosts.length>=ghostMax) return;
+    if(ghostQueue.length===0) return;
+    const id = ghostQueue.shift();
+    ghosts.push({
+      id,
+      x:ghostHouse.x, y:ghostHouse.y, dir:'left',
+      px:ghostHouse.x*tile, py:ghostHouse.y*tile,
     });
+  }
 
-    function update() {
-      // Move mammoth
-      if (mammoth.dir === "up") mammoth.y--;
-      if (mammoth.dir === "down") mammoth.y++;
-      if (mammoth.dir === "left") mammoth.x--;
-      if (mammoth.dir === "right") mammoth.x++;
+  // Staggered release (like Pacman ghost house)
+  setTimeout(spawnGhost, 1500);
+  setTimeout(spawnGhost, 3500);
+  setTimeout(spawnGhost, 5500);
+  setTimeout(spawnGhost, 7500);
 
-      // Collect coins
-      coins = coins.filter(c => {
-        if (c.x === mammoth.x && c.y === mammoth.y) {
-          score++;
-          document.getElementById("score").innerText = "Score: " + score;
-          return false;
-        }
-        return true;
-      });
-
-      // Move hunters randomly
-      hunters.forEach(h => {
-        if (Math.random() < 0.2) {
-          const dirs = ["up", "down", "left", "right"];
-          h.dir = dirs[Math.floor(Math.random() * 4)];
-        }
-        if (h.dir === "up") h.y--;
-        if (h.dir === "down") h.y++;
-        if (h.dir === "left") h.x--;
-        if (h.dir === "right") h.x++;
-      });
-
-      // Collision check
-      hunters.forEach(h => {
-        if (h.x === mammoth.x && h.y === mammoth.y) {
-          alert("Game Over! Final Score: " + score);
-          document.location.reload();
-        }
-      });
+  // ====== INPUT ======
+  window.addEventListener('keydown', e=>{
+    for(const [d,info] of Object.entries(DIRS)){
+      if(e.key===info.key) player.next=d;
     }
+    // start audio on any keypress (autoplay guard)
+    bgm.play().catch(()=>{});
+  });
 
-    function draw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // ====== MOVEMENT ======
+  const speed = 2; // pixels per frame (player)
+  function canMove(x,y,dir){
+    const nx = x + DIRS[dir].x;
+    const ny = y + DIRS[dir].y;
+    return inBounds(nx,ny) && isPath(nx,ny);
+  }
 
-      // Draw coins
-      coins.forEach(c => {
-        ctx.drawImage(coinImg, c.x * tileSize, c.y * tileSize, tileSize, tileSize);
-      });
+  function atCenter(px,py){ return (px%tile===0)&&(py%tile===0); }
 
-      // Draw mammoth
-      ctx.drawImage(mammothSprites[mammoth.dir], mammoth.x * tileSize, mammoth.y * tileSize, tileSize, tileSize);
+  function stepPlayer(){
+    if(atCenter(player.px, player.py)){
+      // align to grid
+      player.x = Math.round(player.px/tile);
+      player.y = Math.round(player.py/tile);
 
-      // Draw hunters
-      hunters.forEach(h => {
-        ctx.drawImage(hunterSprites[h.dir], h.x * tileSize, h.y * tileSize, tileSize, tileSize);
-      });
+      // turn if requested and valid
+      if(canMove(player.x, player.y, player.next)) player.dir = player.next;
+
+      // eat coin
+      const id = idx(player.x, player.y);
+      if(tiles[id]===1){
+        tiles[id]=2;
+        score++; scoreEl.textContent = "Score: "+score;
+      }
     }
-
-    function gameLoop() {
-      update();
-      draw();
+    // move
+    const d = DIRS[player.dir];
+    // prevent entering walls
+    if(atCenter(player.px, player.py)){
+      if(!canMove(player.x, player.y, player.dir)) return; // blocked
     }
+    player.px += d.x*speed;
+    player.py += d.y*speed;
+  }
 
-    setInterval(gameLoop, 200);
+  function optionsAt(x,y,prevDir){
+    const opts=[];
+    for(const d of ['up','down','left','right']){
+      if(d===opposite(prevDir)) continue;
+      const nx=x+DIRS[d].x, ny=y+DIRS[d].y;
+      if(inBounds(nx,ny) && isPath(nx,ny)) opts.push(d);
+    }
+    // if dead-end, allow back
+    if(opts.length===0 && prevDir){ opts.push(prevDir); }
+    return opts;
+  }
+  const opposite = (d)=> d==='up'?'down': d==='down'?'up': d==='left'?'right':'left';
+
+  function stepGhost(g){
+    // choose at intersections
+    if(atCenter(g.px, g.py)){
+      g.x = Math.round(g.px/tile);
+      g.y = Math.round(g.py/tile);
+
+      const opts = optionsAt(g.x, g.y, opposite(g.dir));
+      // very light bias toward the player (cheap chase)
+      const prefer = (dir)=> {
+        const nx=g.x+DIRS[dir].x, ny=g.y+DIRS[dir].y;
+        const dx = Math.sign(player.x - nx), dy = Math.sign(player.y - ny);
+        // prefer directions that reduce manhattan distance
+        if((dir==='left' && dx<0)||(dir==='right' && dx>0)||(dir==='up' && dy<0)||(dir==='down' && dy>0)) return 0.6;
+        return 0.4;
+      };
+      if(opts.length>1){
+        // weighted pick
+        let best=opts[0], bestW=-1;
+        for(const d of opts){
+          const w = prefer(d) + Math.random()*0.4;
+          if(w>bestW){ bestW=w; best=d; }
+        }
+        g.dir = best;
+      }else{
+        g.dir = opts[0];
+      }
+    }
+    const d = DIRS[g.dir];
+    // wall safety
+    if(atCenter(g.px,g.py)){
+      if(!canMove(g.x,g.y,g.dir)) return;
+    }
+    g.px += d.x*ghostSpeed;
+    g.py += d.y*ghostSpeed;
+  }
+
+  function drawActors(){
+    // Player
+    const pdir = player.dir; 
+    ctx.drawImage(mammoth[pdir], player.px, player.py, tile, tile);
+
+    // Ghosts
+    for(const g of ghosts){
+      ctx.drawImage(hunter[g.dir], g.px, g.py, tile, tile);
+    }
+  }
+
+  function checkCollisions(){
+    for(const g of ghosts){
+      const dx = Math.abs((g.px+tile/2) - (player.px+tile/2));
+      const dy = Math.abs((g.py+tile/2) - (player.py+tile/2));
+      if(dx < tile*0.6 && dy < tile*0.6){
+        lives--;
+        livesEl.textContent = "Lives: "+lives;
+        if(lives<=0){
+          endGame(false);
+        }else{
+          // reset player & send one ghost back to house
+          resetPlayer();
+          g.x=ghostHouse.x; g.y=ghostHouse.y; g.px=g.x*tile; g.py=g.y*tile; g.dir='left';
+        }
+      }
+    }
+  }
+
+  function remainingCoins(){
+    return tiles.some(v=>v===1);
+  }
+
+  let running=true, won=false;
+  function endGame(w){
+    running=false; won=w;
+    setTimeout(()=>{
+      alert((w?"YOU WIN! ":"GAME OVER! ") + "Score: "+score);
+      location.reload();
+    }, 50);
+  }
+
+  // ====== LOOP ======
+  function loop(){
+    if(!running) return;
+    stepPlayer();
+    ghosts.forEach(stepGhost);
+    checkCollisions();
+
+    drawMaze();
+    drawActors();
+
+    if(!remainingCoins()) endGame(true);
+    requestAnimationFrame(loop);
+  }
+
+  // ====== INIT ======
+  // Clear pellets inside the ghost house to avoid instant scoring
+  tiles[idx(ghostHouse.x, ghostHouse.y)] = 2;
+
+  // Kick off
+  resetPlayer();
+  // Try autoplay (may be blocked until user interaction)
+  bgm.play().catch(()=>{});
+  requestAnimationFrame(loop);
   </script>
 </body>
 </html>
