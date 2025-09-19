@@ -27,6 +27,19 @@
   <audio id="bgm" src="backgroundmusic.mp3" loop preload="auto"></audio>
 
   <script>
+  // -------------------- Prevent page from scrolling during play --------------------
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      const block = [
+        "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
+        " ", "Spacebar", "PageUp", "PageDown"
+      ];
+      if (block.includes(e.key)) e.preventDefault();
+    },
+    { capture: true }
+  );
+
   // -------------------- Image loader with fallback to *_clean.png --------------------
   function loadImageTry(baseName) {
     return new Promise((resolve) => {
@@ -117,7 +130,7 @@
   function drawMaze() {
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    // draw wall edges only (no solid fill, so no blue bar)
+    // draw wall edges only (no solid fill → no blue strip)
     ctx.strokeStyle="#0747ff";
     ctx.lineWidth=4;
     ctx.lineCap="butt";
@@ -195,11 +208,12 @@
   setTimeout(spawnGhost,5500);
   setTimeout(spawnGhost,7500);
 
+  // Input (also prevent default here)
   window.addEventListener('keydown', e=>{
+    e.preventDefault();
     for(const [d,info] of Object.entries(DIRS)){
       if(e.key===info.key) player.next=d;
     }
-    // kick audio on user interaction (autoplay policy)
     if (musicOn) bgm.play().catch(()=>{});
   });
 
@@ -225,15 +239,14 @@
   }
 
   function optionsAt(x,y,prevDir){
-    // continue straight if possible (prevents ping-pong)
-    if (prevDir && canMove(x,y,prevDir)) return [prevDir];
+    if (prevDir && canMove(x,y,prevDir)) return [prevDir]; // keep going if possible
     const opts=[];
     for(const d of ['up','down','left','right']){
       if(d===opposite(prevDir)) continue;
       const nx=x+DIRS[d].x, ny=y+DIRS[d].y;
       if(inBounds(nx,ny) && isPath(nx,ny)) opts.push(d);
     }
-    if(opts.length===0 && prevDir) opts.push(opposite(prevDir)); // dead end
+    if(opts.length===0 && prevDir) opts.push(opposite(prevDir)); // dead end → backtrack
     return opts;
   }
 
@@ -260,7 +273,8 @@
     const d=DIRS[g.dir]; g.px += d.x*ghostSpeed; g.py += d.y*ghostSpeed;
   }
 
-  function drawActors(){
+  function drawMazeAndActors(){
+    drawMaze();
     ctx.drawImage(mammoth[player.dir], player.px, player.py, tile, tile);
     for(const g of ghosts){
       ctx.drawImage(hunter[g.dir], g.px, g.py, tile, tile);
@@ -299,8 +313,7 @@
       stepPlayer();
       ghosts.forEach(stepGhost);
       checkCollisions();
-      drawMaze();
-      drawActors();
+      drawMazeAndActors();
       if(!remainingCoins()) endGame(true);
       requestAnimationFrame(loop);
     });
