@@ -40,7 +40,20 @@
   const coinImg = new Image(); coinImg.src="vinecoin.png";
 
   const bgm = document.getElementById('bgm');
-  document.getElementById('playAudio').onclick = () => { bgm.play().catch(()=>{}); };
+  const toggleBtn = document.getElementById('toggleAudio');
+  
+  let musicOn = true;
+  toggleBtn.onclick = () => {
+    if (musicOn) {
+      bgm.pause();
+      toggleBtn.textContent = "Music: OFF";
+    } else {
+      bgm.play().catch(()=>{});
+      toggleBtn.textContent = "Music: ON";
+    }
+    musicOn = !musicOn;
+  };
+
 
   // ===== Canvas / grid =====
   const tile = 20;
@@ -303,4 +316,5 @@
   </script>
 </body>
 </html>
+
 
