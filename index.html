@@ -2,16 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Mammobits Arcade — PacMammoth</title>
+  <title>Mammobits Arcade — Pac-Mammoth</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { --tile: 20px; }
     html, body { margin:0; background:#000; color:#fff; font-family:Arial, Helvetica, sans-serif; }
-    #ui { position:fixed; inset:0 0 auto 0; display:flex; gap:16px; padding:10px 14px; align-items:center; z-index:1; }
+    #ui { position:fixed; inset:0 0 auto 0; display:flex; gap:16px; padding:10px 14px; align-items:center; z-index:2; }
     #score { font-weight:700; }
     #canvas { display:block; margin:48px auto 20px; background:#000; }
     button { background:#10b981; color:#00100a; border:0; padding:6px 10px; border-radius:6px; cursor:pointer; }
     button:active { transform:translateY(1px); }
+    a { color:#35f; }
   </style>
 </head>
 <body>
@@ -20,28 +21,52 @@
     <div id="lives">Lives: 3</div>
     <button id="toggleAudio">Music: ON</button>
   </div>
+
+  <!-- 400x400 playfield = 20x20 tiles at 20px -->
   <canvas id="canvas" width="400" height="400"></canvas>
   <audio id="bgm" src="backgroundmusic.mp3" loop preload="auto"></audio>
 
   <script>
-  // ===== Assets =====
-  const mammoth = { up:new Image(), down:new Image(), left:new Image(), right:new Image() };
-  mammoth.up.src="mammoth_up.png";
-  mammoth.down.src="mammoth_down.png";
-  mammoth.left.src="mammoth_left.png";
-  mammoth.right.src="mammoth_right.png";
+  // -------------------- Image loader with fallback to *_clean.png --------------------
+  function loadImageTry(baseName) {
+    return new Promise((resolve) => {
+      const clean = new Image();
+      const original = new Image();
 
-  const hunter = { up:new Image(), down:new Image(), left:new Image(), right:new Image() };
-  hunter.up.src="hunter_up.png";
-  hunter.down.src="hunter_down.png";
-  hunter.left.src="hunter_left.png";
-  hunter.right.src="hunter_right.png";
+      clean.onload = () => resolve(clean);
+      clean.onerror = () => {
+        original.onload = () => resolve(original);
+        original.src = baseName;
+      };
+      clean.src = baseName.replace(".png", "_clean.png");
+    });
+  }
 
-  const coinImg = new Image(); coinImg.src="vinecoin.png";
+  async function loadSprites() {
+    const mammoth = {
+      up:    await loadImageTry("mammoth_up.png"),
+      down:  await loadImageTry("mammoth_down.png"),
+      left:  await loadImageTry("mammoth_left.png"),
+      right: await loadImageTry("mammoth_right.png"),
+    };
+    const hunter = {
+      up:    await loadImageTry("hunter_up.png"),
+      down:  await loadImageTry("hunter_down.png"),
+      left:  await loadImageTry("hunter_left.png"),
+      right: await loadImageTry("hunter_right.png"),
+    };
+    const coinImg = await (async () => {
+      const img = new Image();
+      img.src = "vinecoin.png";
+      await img.decode?.().catch(()=>{});
+      return img;
+    })();
+    return { mammoth, hunter, coinImg };
+  }
 
+  // -------------------- Audio toggle --------------------
   const bgm = document.getElementById('bgm');
   const toggleBtn = document.getElementById('toggleAudio');
-  
   let musicOn = true;
   toggleBtn.onclick = () => {
     if (musicOn) {
@@ -54,14 +79,12 @@
     musicOn = !musicOn;
   };
 
-
-  // ===== Canvas / grid =====
+  // -------------------- Canvas / Grid --------------------
   const tile = 20;
-  const cols = 20, rows = 20;            // 400x400 playfield
+  const cols = 20, rows = 20;
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d');
 
-  // ===== Maze (your Python tiles) =====
   // 0 = wall, 1 = pellet, 2 = empty
   const tiles = [
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
@@ -86,58 +109,36 @@
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
   ];
 
-  // Helpers
   const idx = (x,y)=> x + y*cols;
   const inBounds = (x,y)=> x>=0 && x<cols && y>=0 && y<rows;
   const isWall = (x,y)=> tiles[idx(x,y)]===0;
   const isPath = (x,y)=> tiles[idx(x,y)]!==0;
 
-  // ===== Maze drawing (edge-lines only → no blue strip) =====
-  function drawMaze(){
+  function drawMaze() {
     ctx.clearRect(0,0,canvas.width,canvas.height);
-    // Draw floor for paths
-    ctx.fillStyle="#000";
-    ctx.fillRect(0,0,canvas.width,canvas.height);
 
-    // Draw wall edges as lines where a wall borders a path
+    // draw wall edges only (no solid fill, so no blue bar)
     ctx.strokeStyle="#0747ff";
-    ctx.lineWidth = 4;
-    ctx.lineCap = "butt";
-
+    ctx.lineWidth=4;
+    ctx.lineCap="butt";
     ctx.beginPath();
-    for(let y=0;y<rows;y++){
-      for(let x=0;x<cols;x++){
-        if(!isWall(x,y)) continue;
-        const px=x*tile, py=y*tile;
 
-        // Top edge
-        if(y>0 && !isWall(x,y-1)){
-          ctx.moveTo(px, py);
-          ctx.lineTo(px+tile, py);
-        }
-        // Bottom edge
-        if(y<rows-1 && !isWall(x,y+1)){
-          ctx.moveTo(px, py+tile);
-          ctx.lineTo(px+tile, py+tile);
-        }
-        // Left edge
-        if(x>0 && !isWall(x-1,y)){
-          ctx.moveTo(px, py);
-          ctx.lineTo(px, py+tile);
-        }
-        // Right edge
-        if(x<cols-1 && !isWall(x+1,y)){
-          ctx.moveTo(px+tile, py);
-          ctx.lineTo(px+tile, py+tile);
-        }
+    for (let y=0;y<rows;y++) {
+      for (let x=0;x<cols;x++) {
+        if (!isWall(x,y)) continue;
+        const px=x*tile, py=y*tile;
+        if (y>0 && !isWall(x,y-1)) { ctx.moveTo(px,py); ctx.lineTo(px+tile,py); }
+        if (y<rows-1 && !isWall(x,y+1)) { ctx.moveTo(px,py+tile); ctx.lineTo(px+tile,py+tile); }
+        if (x>0 && !isWall(x-1,y)) { ctx.moveTo(px,py); ctx.lineTo(px,py+tile); }
+        if (x<cols-1 && !isWall(x+1,y)) { ctx.moveTo(px+tile,py); ctx.lineTo(px+tile,py+tile); }
       }
     }
     ctx.stroke();
 
-    // Draw vinecoins on paths (tile==1)
-    for(let y=0;y<rows;y++){
-      for(let x=0;x<cols;x++){
-        if(tiles[idx(x,y)]===1){
+    // draw vinecoins on path tiles (tile==1)
+    for (let y=0;y<rows;y++) {
+      for (let x=0;x<cols;x++) {
+        if (tiles[idx(x,y)]===1) {
           const s = Math.floor(tile*0.6);
           ctx.drawImage(coinImg, x*tile + (tile-s)/2, y*tile + (tile-s)/2, s, s);
         }
@@ -145,7 +146,7 @@
     }
   }
 
-  // ===== Actors =====
+  // -------------------- Game actors --------------------
   const DIRS = {
     up:    {x:0,y:-1, key:"ArrowUp"},
     down:  {x:0,y:1,  key:"ArrowDown"},
@@ -158,7 +159,6 @@
   const scoreEl=document.getElementById('score');
   const livesEl=document.getElementById('lives');
 
-  // Find a valid center-ish spawn tile (path)
   function findCenterSpawn(){
     const cx=Math.floor(cols/2), cy=Math.floor(rows/2);
     let best={x:cx,y:cy,dist:1e9};
@@ -172,9 +172,9 @@
     }
     return {x:best.x,y:best.y};
   }
-
   const ghostHouse = findCenterSpawn();
-  const startMammoth = { x:9, y:15 }; // good starting lane
+
+  const startMammoth = { x:9, y:15 };
   let player = { x:startMammoth.x, y:startMammoth.y, dir:'left', next:'left', px:startMammoth.x*tile, py:startMammoth.y*tile };
 
   function resetPlayer(){
@@ -182,29 +182,27 @@
     player.px=player.x*tile; player.py=player.y*tile;
   }
 
-  const ghosts=[];            // active ghosts
-  const ghostQueue=[0,1,2,3]; // up to 4
+  const ghosts=[];
+  const ghostQueue=[0,1,2,3];
   const ghostSpeed=2;
   function spawnGhost(){
     if(ghosts.length>=4 || ghostQueue.length===0) return;
     const id=ghostQueue.shift();
     ghosts.push({ id, x:ghostHouse.x, y:ghostHouse.y, dir:'left', px:ghostHouse.x*tile, py:ghostHouse.y*tile });
   }
-  // staggered release
   setTimeout(spawnGhost,1500);
   setTimeout(spawnGhost,3500);
   setTimeout(spawnGhost,5500);
   setTimeout(spawnGhost,7500);
 
-  // Input
   window.addEventListener('keydown', e=>{
     for(const [d,info] of Object.entries(DIRS)){
       if(e.key===info.key) player.next=d;
     }
-    bgm.play().catch(()=>{});
+    // kick audio on user interaction (autoplay policy)
+    if (musicOn) bgm.play().catch(()=>{});
   });
 
-  // Movement helpers
   const atCenter = (px,py)=> (px%tile===0)&&(py%tile===0);
   const canMove = (x,y,dir)=>{
     const nx=x+DIRS[dir].x, ny=y+DIRS[dir].y;
@@ -217,32 +215,25 @@
       player.x = Math.round(player.px/tile);
       player.y = Math.round(player.py/tile);
 
-      // Turn if requested & valid
       if(canMove(player.x, player.y, player.next)) player.dir = player.next;
 
-      // Eat coin
       const t = idx(player.x, player.y);
       if(tiles[t]===1){ tiles[t]=2; score++; scoreEl.textContent="Score: "+score; }
     }
-    // move forward if possible
     if(atCenter(player.px, player.py) && !canMove(player.x, player.y, player.dir)) return;
     const d=DIRS[player.dir]; player.px += d.x*speed; player.py += d.y*speed;
   }
 
   function optionsAt(x,y,prevDir){
-    // forward-first: keep going if possible (prevents ping-pong)
+    // continue straight if possible (prevents ping-pong)
+    if (prevDir && canMove(x,y,prevDir)) return [prevDir];
     const opts=[];
-    const forward = prevDir;
-    if(forward && canMove(x,y,forward)) return [forward];
-
-    // otherwise choose any non-backtracking options
     for(const d of ['up','down','left','right']){
       if(d===opposite(prevDir)) continue;
       const nx=x+DIRS[d].x, ny=y+DIRS[d].y;
       if(inBounds(nx,ny) && isPath(nx,ny)) opts.push(d);
     }
-    // dead end → allow back
-    if(opts.length===0 && prevDir) opts.push(opposite(prevDir));
+    if(opts.length===0 && prevDir) opts.push(opposite(prevDir)); // dead end
     return opts;
   }
 
@@ -251,11 +242,11 @@
       g.x = Math.round(g.px/tile);
       g.y = Math.round(g.py/tile);
 
-      // prefer continuing straight; otherwise pick a valid turn (slight bias towards player)
       const opts = optionsAt(g.x,g.y,g.dir);
       if(opts.length===1){
         g.dir = opts[0];
       }else{
+        // lightly bias toward player
         let best=opts[0], bestScore=-1e9;
         for(const d of opts){
           const nx=g.x+DIRS[d].x, ny=g.y+DIRS[d].y;
@@ -265,7 +256,7 @@
         g.dir = best;
       }
     }
-    if(atCenter(g.px,g.py) && !canMove(g.x,g.y,g.dir)) return; // safety
+    if(atCenter(g.px,g.py) && !canMove(g.x,g.y,g.dir)) return;
     const d=DIRS[g.dir]; g.px += d.x*ghostSpeed; g.py += d.y*ghostSpeed;
   }
 
@@ -284,7 +275,6 @@
         lives--; livesEl.textContent="Lives: "+lives;
         if(lives<=0){ endGame(false); return; }
         resetPlayer();
-        // send this ghost home
         g.x=ghostHouse.x; g.y=ghostHouse.y; g.px=g.x*tile; g.py=g.y*tile; g.dir='left';
       }
     }
@@ -294,27 +284,27 @@
   let running=true;
   function endGame(win){
     running=false;
-    setTimeout(()=>{ alert((win?"YOU WIN! ":"GAME OVER! ")+"Score: "+score); location.reload(); }, 50);
+    setTimeout(()=>{ alert((win?"YOU WIN! ":"GAME OVER! ")+"Score: "+score); location.reload(); }, 80);
   }
 
-  function loop(){
-    if(!running) return;
-    stepPlayer();
-    ghosts.forEach(stepGhost);
-    checkCollisions();
-    drawMaze();
-    drawActors();
-    if(!remainingCoins()) endGame(true);
-    requestAnimationFrame(loop);
-  }
-
-  // init
-  tiles[idx(ghostHouse.x, ghostHouse.y)] = 2;  // ensure house tile has no pellet
-  resetPlayer();
-  bgm.play().catch(()=>{});
-  requestAnimationFrame(loop);
+  // -------------------- Boot --------------------
+  let mammoth, hunter, coinImg;
+  (async () => {
+    ({mammoth, hunter, coinImg} = await loadSprites());
+    tiles[idx(ghostHouse.x, ghostHouse.y)] = 2; // no pellet in the house
+    resetPlayer();
+    if (musicOn) bgm.play().catch(()=>{});
+    requestAnimationFrame(function loop(){
+      if(!running) return;
+      stepPlayer();
+      ghosts.forEach(stepGhost);
+      checkCollisions();
+      drawMaze();
+      drawActors();
+      if(!remainingCoins()) endGame(true);
+      requestAnimationFrame(loop);
+    });
+  })();
   </script>
 </body>
 </html>
-
-
